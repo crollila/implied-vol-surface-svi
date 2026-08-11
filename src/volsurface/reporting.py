@@ -260,13 +260,44 @@ def build_analysis(result: "PipelineResult") -> str:
         resid_all.append((model - slc["iv"].to_numpy(dtype=float)) * 1e4)
     resid = np.concatenate(resid_all) if resid_all else np.zeros(1)
 
-    inner = np.concatenate(
-        [
-            r[np.abs(surface.slice(f.expiry)["k"].to_numpy(dtype=float)) <= 0.1]
-            for f, r in zip(fits, resid_all)
-        ]
-    )
-    inner_rmse = float(np.sqrt(np.mean(inner**2))) if inner.size else float("nan")
+    # Split core from wings in *standardised* moneyness.  A fixed |k| cut
+    # would really be a maturity cut -- every strike of a one-week slice sits
+    # inside |k| < 0.06 -- and would say nothing about liquidity.
+    core_parts, wing_parts = [], []
+    for fit, r in zip(fits, resid_all):
+        k = surface.slice(fit.expiry)["k"].to_numpy(dtype=float)
+        scale = max(_atm_iv(fit) * np.sqrt(fit.T), 1e-12)
+        z = np.abs(k / scale)
+        core_parts.append(r[z <= 1.0])
+        wing_parts.append(r[z > 2.0])
+
+    core = np.concatenate(core_parts) if core_parts else np.zeros(0)
+    wing = np.concatenate(wing_parts) if wing_parts else np.zeros(0)
+
+    def _rmse(x):
+        return float(np.sqrt(np.mean(x**2))) if x.size else float("nan")
+
+    core_rmse, wing_rmse = _rmse(core), _rmse(wing)
+
+    if np.isfinite(core_rmse) and np.isfinite(wing_rmse) and wing_rmse > core_rmse * 1.2:
+        precision_text = (
+            f"and it is markedly more precise near the money than in the wings: RMSE is "
+            f"**{core_rmse:.1f} bps** within one standard deviation of the forward against "
+            f"**{wing_rmse:.1f} bps** beyond two. That is intended. Vega weighting concentrates "
+            "the fit where the market has price information and treats far-out-of-the-money "
+            "quotes — priced in pennies, on wide markets, with almost no vega — as the weak "
+            "evidence they are. A five-parameter curve that chased them would fit noise and lose "
+            "signal."
+        )
+    else:
+        precision_text = (
+            f"and the error is spread fairly evenly across moneyness: RMSE is "
+            f"**{core_rmse:.1f} bps** within one standard deviation of the forward against "
+            f"**{wing_rmse:.1f} bps** beyond two. The residual scatter is dominated not by the "
+            "wings but by the shortest expiries, where a one-cent tick is a large fraction of "
+            "the premium and the asynchronous last-trade timestamps bite hardest — visible as "
+            "the two highest bars in the per-slice RMSE chart."
+        )
 
     example_caveat = (
         "\n> Note: the 90%-of-forward strike sits outside the quoted range for this slice, "
@@ -474,15 +505,10 @@ The Durrleman curves for every slice are plotted in the right-hand panel of
 Across all {len(surface.points):,} points, the model-minus-market residual has mean
 **{resid.mean():+.1f} vol bps** and standard deviation **{resid.std():.1f} vol bps**; the median
 absolute residual is **{np.median(np.abs(resid)):.1f} bps** and the worst single point is
-**{np.max(np.abs(resid)):.0f} bps**. Restricted to the liquid core (|k| ≤ 0.10), RMSE falls to
-**{inner_rmse:.1f} bps**.
+**{np.max(np.abs(resid)):.0f} bps**.
 
-A mean of essentially zero against a much larger spread is the signature of an unbiased fit with
-heteroskedastic noise: the model is not systematically rich or cheap, but it is far more precise
-near the money than in the wings. That is intended. Vega weighting deliberately concentrates the
-fit where the market has price information, and treats far-out-of-the-money quotes — priced in
-pennies, on wide markets, with almost no vega — as the weak evidence they are. A five-parameter
-curve that chased them would fit the noise and lose the signal.
+A mean of essentially zero against a much larger spread is the signature of an unbiased fit —
+the model is not systematically rich or cheap — {precision_text}
 
 See `figures/fit_diagnostics.png` for the residual scatter, its distribution, and the Durrleman
 curves.

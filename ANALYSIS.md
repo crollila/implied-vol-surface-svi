@@ -214,15 +214,10 @@ The Durrleman curves for every slice are plotted in the right-hand panel of
 Across all 1,058 points, the model-minus-market residual has mean
 **-0.5 vol bps** and standard deviation **19.2 vol bps**; the median
 absolute residual is **8.0 bps** and the worst single point is
-**210 bps**. Restricted to the liquid core (|k| ≤ 0.10), RMSE falls to
-**18.0 bps**.
+**210 bps**.
 
-A mean of essentially zero against a much larger spread is the signature of an unbiased fit with
-heteroskedastic noise: the model is not systematically rich or cheap, but it is far more precise
-near the money than in the wings. That is intended. Vega weighting deliberately concentrates the
-fit where the market has price information, and treats far-out-of-the-money quotes — priced in
-pennies, on wide markets, with almost no vega — as the weak evidence they are. A five-parameter
-curve that chased them would fit the noise and lose the signal.
+A mean of essentially zero against a much larger spread is the signature of an unbiased fit —
+the model is not systematically rich or cheap — and it is markedly more precise near the money than in the wings: RMSE is **15.7 bps** within one standard deviation of the forward against **30.2 bps** beyond two. That is intended. Vega weighting concentrates the fit where the market has price information and treats far-out-of-the-money quotes — priced in pennies, on wide markets, with almost no vega — as the weak evidence they are. A five-parameter curve that chased them would fit noise and lose signal.
 
 See `figures/fit_diagnostics.png` for the residual scatter, its distribution, and the Durrleman
 curves.
