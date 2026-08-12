@@ -1,5 +1,10 @@
 # Implied Volatility Surface + SVI Fit
 
+[![tests](https://github.com/crollila/implied-vol-surface-svi/actions/workflows/tests.yml/badge.svg)](https://github.com/crollila/implied-vol-surface-svi/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![tests: 143](https://img.shields.io/badge/tests-143%20passing-brightgreen.svg)](tests/)
+
 Builds an implied-volatility surface from a live equity-index options chain and calibrates the
 **raw SVI** parameterisation to every expiry slice, with full static-arbitrage diagnostics.
 
@@ -11,6 +16,20 @@ used anywhere.
 
 *SPY, 2026-08-10 close. Left: the fitted surface in standardised moneyness. Right: the same
 slices over the strike range each expiry actually quotes.*
+
+### Results at a glance — SPY, 2026-08-10 close
+
+| | |
+|---|---|
+| Listed contracts pulled | 11,169 |
+| Surviving quote hygiene | 1,058 across 12 expiries |
+| **Median fit error** | **15.2 vol bps** (bid/ask is 20–100 bps wide) |
+| Core vs wings | 15.7 bps within 1σ of the forward, 30.2 bps beyond 2σ |
+| Butterfly-arbitrage free | 12 / 12 slices |
+| Calendar-arbitrage free | yes, on every adjacent pair |
+| Runtime | ~9 s end to end |
+
+Full write-up, with the reasoning behind each number: **[ANALYSIS.md](ANALYSIS.md)**.
 
 ---
 
