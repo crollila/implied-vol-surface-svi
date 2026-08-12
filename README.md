@@ -3,10 +3,10 @@
 <!-- project-history -->
 > ### Project history
 >
-> **Quant Projects / Quantitative Research Suite**  
-> **July 2026 - Present** &nbsp;|&nbsp; Independent Quantitative Research
+> **Implied Volatility Surface with SVI Calibration**  
+> **June 2026 - Present** &nbsp;|&nbsp; Independent Quantitative Research
 >
-> Part of a collection of quantitative finance projects covering systematic strategy research, statistical analysis, financial modeling, derivatives pricing, signal evaluation, and market-data analysis.
+> Constructed an implied volatility surface from live equity-index options with raw SVI calibrated per expiry slice and full static-arbitrage diagnostics. Black-Scholes, the implied-volatility inversion, and the SVI fit were implemented from scratch.
 >
 > This repository was published to GitHub in August 2026. GitHub's repository
 > creation date reflects when the code was uploaded here, not when the work was
