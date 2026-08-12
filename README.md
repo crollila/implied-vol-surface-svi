@@ -1,5 +1,17 @@
 # Implied Volatility Surface + SVI Fit
 
+<!-- project-history -->
+> ### Project history
+>
+> **Quant Projects / Quantitative Research Suite**  
+> **July 2026 - Present** &nbsp;|&nbsp; Independent Quantitative Research
+>
+> Part of a collection of quantitative finance projects covering systematic strategy research, statistical analysis, financial modeling, derivatives pricing, signal evaluation, and market-data analysis.
+>
+> This repository was published to GitHub in August 2026. GitHub's repository
+> creation date reflects when the code was uploaded here, not when the work was
+> done. This is independent quantitative derivatives research rather than a standalone trading strategy.
+
 [![tests](https://github.com/crollila/implied-vol-surface-svi/actions/workflows/tests.yml/badge.svg)](https://github.com/crollila/implied-vol-surface-svi/actions/workflows/tests.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
