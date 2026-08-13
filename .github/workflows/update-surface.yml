@@ -1,0 +1,101 @@
+name: refresh surface
+
+# Re-runs the whole pipeline against live quotes during the US cash session
+# and commits the refreshed figures, tables and write-up.
+#
+# 17:00 UTC is 13:00 New York during EDT — mid-session, well clear of the
+# opening auction, when two-sided markets are widest awake. GitHub's cron is
+# UTC-only and has no idea about market holidays, so the job does not trust
+# the schedule: it inspects the data it actually got and refuses to commit
+# unless the market was demonstrably open (see the guard step).
+
+on:
+  schedule:
+    - cron: "0 17 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Fetch and fit, but do not commit"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-surface
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run the pipeline against live quotes
+        run: python -m volsurface --ticker SPY --rate 0.04 --refresh
+
+      # A cron schedule cannot know about Thanksgiving. When the market is
+      # shut, Yahoo still serves a chain, but the quotes are withdrawn and
+      # the surface falls back to stale last-trade prints. Committing that
+      # would silently replace a good end-of-day surface with a worse one,
+      # so require that most points came from live two-sided markets.
+      - name: Verify the market was actually open
+        id: guard
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import pandas as pd
+          pts = pd.read_csv("outputs/surface_points.csv")
+          mix = pts["price_source"].value_counts()
+          live = int(mix.get("mid", 0))
+          frac = live / max(len(pts), 1)
+          print(f"live_fraction={frac:.3f}")
+          print(f"fresh={'true' if frac >= 0.5 else 'false'}")
+          print(f"summary={live} of {len(pts)} points from live two-sided quotes")
+          PY
+
+      - name: Report
+        run: |
+          echo "### Surface refresh" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.guard.outputs.summary }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.guard.outputs.fresh }}" != "true" ]; then
+            echo ":warning: Mostly stale prices — the market was probably closed. Not committing." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          head -30 outputs/svi_params.csv >> "$GITHUB_STEP_SUMMARY"
+
+      # Snapshots are ~230 KB each; keeping every one would add ~55 MB a
+      # year to the repository for no benefit. Three is enough to show the
+      # surface moving day to day while keeping `--offline` reproducible.
+      - name: Keep only the three most recent cached snapshots
+        if: steps.guard.outputs.fresh == 'true' && inputs.dry_run != true
+        run: |
+          cd data/cache/SPY
+          ls -1 | sort -r | tail -n +4 | xargs -r rm -rf
+          ls -1
+
+      - name: Commit the refreshed surface
+        if: steps.guard.outputs.fresh == 'true' && inputs.dry_run != true
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A figures outputs ANALYSIS.md data/cache
+          if git diff --cached --quiet; then
+            echo "nothing changed"
+            exit 0
+          fi
+          git commit -m "data: refresh SPY surface ($(date -u '+%Y-%m-%d %H:%M UTC'))
+
+          Automated mid-session run. ${{ steps.guard.outputs.summary }}."
+          git push

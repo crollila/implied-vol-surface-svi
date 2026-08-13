@@ -111,10 +111,16 @@ def _points_table(surface: SurfaceData, fits: list[SVIFit]) -> pd.DataFrame:
 
     cols = [
         "expiry", "T", "strike", "forward", "forward_source", "k", "option_type",
-        "bid", "ask", "mid", "rel_spread", "volume", "openInterest",
+        "bid", "ask", "price", "price_source", "rel_spread", "volume", "openInterest",
         "iv", "iv_svi", "resid_iv_bps", "total_var", "vega", "iv_method",
     ]
-    return pts[[c for c in cols if c in pts.columns]].reset_index(drop=True)
+    missing = [c for c in cols if c not in pts.columns]
+    if missing:
+        # Guards against a column being renamed upstream and silently
+        # vanishing from the published CSV, which is how `price` and
+        # `price_source` went missing once already.
+        raise RuntimeError(f"surface points are missing expected columns: {missing}")
+    return pts[cols].reset_index(drop=True)
 
 
 def run_pipeline(cfg: Config) -> PipelineResult:
