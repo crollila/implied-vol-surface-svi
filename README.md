@@ -45,6 +45,110 @@ Full write-up, with the reasoning behind each number: **[ANALYSIS.md](ANALYSIS.m
 
 ---
 
+## What this is, for anyone who doesn't speak options
+
+Skip to [How it works](#how-it-works) if you already know what a vol surface is.
+
+### The problem
+
+Black-Scholes — the standard option pricing formula — needs one number as input: how volatile
+you think the stock will be. Feed it a volatility, it gives you a price. **Run it backwards** and
+a market price gives you back exactly one volatility. That number is the *implied volatility*: it
+isn't a forecast, it's the market's price quoted in different units, the way a bond is quoted as
+a yield.
+
+Black-Scholes assumes that number is the *same* for every option on a stock. It isn't — not even
+close. Options that pay off in a crash cost far more than the formula says they should.
+
+![What the problem is](figures/explainer_problem.png)
+
+Plot implied volatility against strike and you get a lopsided curve — the **volatility skew** —
+not a flat line. Do that for every expiry date at once and the curve becomes a **surface**.
+Building that surface, cleanly, from real market data, is what this project does.
+
+### Why it isn't just arithmetic
+
+Two things make it harder than running a formula backwards.
+
+**Not every quote is trustworthy.** An option price only reveals volatility through the part of
+its value that depends on volatility. For some options that part is almost the whole price; for
+others it is a rounding error, and their implied volatility is meaningless noise.
+
+![How implied volatility is recovered](figures/explainer_implied_vol.png)
+
+That is the reasoning behind the single most consequential decision in the codebase — using only
+*out-of-the-money* options, the ones with no built-in profit:
+
+![Why out-of-the-money quotes only](figures/explainer_why_otm.png)
+
+**And most of the chain is unusable.** Of ~11,000 listed SPY contracts, about 9% survive:
+
+![The data funnel](figures/explainer_data_funnel.png)
+
+### The model
+
+Rather than storing thousands of loose points, each expiry's curve is compressed into **five
+numbers** using the SVI model. Each one bends the curve a different way:
+
+![The five SVI parameters](figures/explainer_svi_params.png)
+
+Twelve expiries × five numbers = 60 numbers that reproduce 1,058 market quotes to within a
+fraction of the bid/ask spread.
+
+### The sanity checks
+
+A curve that fits the data can still be nonsense — it can imply a negative probability, or that
+uncertainty *shrinks* with time. Both would be free money for anyone who noticed. Every fitted
+slice is tested for both:
+
+![The arbitrage checks](figures/explainer_arbitrage.png)
+
+### How the pieces fit together
+
+```mermaid
+flowchart TD
+    Y["<b>Yahoo Finance</b><br/>~11,000 live SPY contracts"]
+    D["<b>1 · Fetch</b> — data.py<br/>pull the chain, cache to parquet"]
+    CACHE[("data/cache/<br/><i>--offline replays a run exactly</i>")]
+    C["<b>2 · Clean</b> — surface.py<br/>live mid, else same-session last trade<br/>forward from put-call parity<br/>out-of-the-money side only<br/>drop prices that break monotonicity"]
+    BS["black_scholes.py<br/>pricing · vega · no-arbitrage bounds"]
+    I["<b>3 · Invert</b> — implied_vol.py<br/>Brent on the price residual,<br/>safeguarded Newton as fallback"]
+    F["<b>4 · Fit</b> — svi.py<br/>5 parameters per expiry,<br/>vega-weighted, multi-start"]
+    A{"arbitrage-free?<br/>butterfly · calendar"}
+    R["refit with the condition<br/>as a penalty"]
+    P["<b>5 · Publish</b> — pipeline.py"]
+    FIG["figures/<br/>surface · smiles · diagnostics"]
+    CSV["outputs/<br/>parameters · points · forwards"]
+    MD["ANALYSIS.md<br/><i>written from the run itself,<br/>so its numbers cannot go stale</i>"]
+
+    Y --> D --> C --> I --> F --> A
+    D -.-> CACHE
+    CACHE -.-> C
+    BS -.-> I
+    A -- "no" --> R
+    R --> F
+    A -- "yes" --> P
+    P --> FIG
+    P --> CSV
+    P --> MD
+
+    classDef src fill:#e8eef7,stroke:#1b3b6f,color:#12233f
+    classDef proc fill:#ffffff,stroke:#1b3b6f,color:#12233f
+    classDef helper fill:#f6f7f9,stroke:#8a8f98,color:#3a3f48
+    classDef result fill:#e6f4f1,stroke:#2a9d8f,color:#12332f
+    classDef check fill:#fdeaee,stroke:#d1495b,color:#3f1219
+    class Y,CACHE src
+    class D,C,I,F,R,P proc
+    class BS helper
+    class FIG,CSV,MD result
+    class A check
+```
+
+Every arrow above is covered by tests: the suite builds a synthetic options chain from a known
+surface, pushes it through the whole pipeline, and checks the original surface comes back out.
+
+---
+
 ## What this demonstrates
 
 *(for a reader skimming a CV)*
@@ -103,13 +207,26 @@ pytest
 | `figures/smiles.png` | Per-expiry market IV vs fitted SVI curve |
 | `figures/term_structure.png` | ATM vol, skew, total variance and RMSE by maturity |
 | `figures/fit_diagnostics.png` | Residuals and Durrleman `g(k)` curves |
+| `figures/explainer_*.png` | The illustrations above — `python -m volsurface.explainers` |
 | `outputs/svi_params.csv` | Fitted `a, b, ρ, m, σ` + RMSE and diagnostics per expiry |
-| `outputs/surface_points.csv` | Every clean quote, its IV, the fitted IV and the residual |
+| `outputs/surface_points.csv` | Every clean quote: price used, its source, IV, fitted IV, residual |
 | `outputs/forwards.csv` | Per-expiry forward and how it was obtained |
 | [`ANALYSIS.md`](ANALYSIS.md) | Generated write-up of the skew, term structure and departure from flat-vol BS |
 
 `ANALYSIS.md` is regenerated on every run, so every number in it comes from the run that
 produced the figures beside it.
+
+### Staying current
+
+A [scheduled workflow](.github/workflows/update-surface.yml) re-runs the pipeline against live
+quotes at **17:00 UTC each weekday** — mid-session in New York — and commits the refreshed
+figures, tables and write-up.
+
+GitHub's cron is UTC-only and knows nothing about market holidays, so the job does not trust its
+own schedule. It inspects the data it actually received and commits only when most points came
+from live two-sided markets, which is the observable signature of an open market. On a holiday it
+reports what it saw and changes nothing. You can also trigger it by hand from the Actions tab,
+with a dry-run option that fits but does not commit.
 
 ---
 
@@ -214,13 +331,17 @@ src/volsurface/
   implied_vol.py     Brent + safeguarded Newton inversion
   surface.py         cleaning, forwards, OTM selection, surface assembly
   svi.py             raw SVI, calibration, Durrleman & calendar checks
-  plotting.py        all four figures
+  plotting.py        the four result figures
+  explainers.py      the illustrated walkthrough above
   reporting.py       generates ANALYSIS.md from the run
   pipeline.py        orchestration
   cli.py             argument parsing and entry point
-tests/               143 tests
+tests/               143 tests, all offline
+.github/workflows/
+  tests.yml          pytest on Linux + Windows, Python 3.11 & 3.12
+  update-surface.yml weekday mid-session refresh, commits the result
 figures/  outputs/   generated
-data/cache/          parquet snapshots (one committed)
+data/cache/          parquet snapshots (the three most recent are kept)
 ```
 
 ## CLI reference
